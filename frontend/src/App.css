@@ -20,10 +20,10 @@
 .cluster-card strong { overflow: hidden; color: #f1f5f9; font-size: 15px; text-overflow: ellipsis; white-space: nowrap; }
 .cluster-card .mono { color: var(--sidebar-muted); font-size: 13px; }
 
-.nav { display: flex; flex: 1; flex-direction: column; gap: 16px; }
+.nav { display: flex; flex: 1; flex-direction: column; gap: 12px; }
 .nav-group { display: flex; flex-direction: column; gap: 2px; }
 .nav-group-label { padding: 0 12px 6px; color: var(--sidebar-muted); font-size: 12px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; }
-.nav-item { display: flex; height: 42px; align-items: center; gap: 12px; padding: 0 12px; color: var(--sidebar-text); border: 0; border-radius: 8px; background: transparent; font-size: 15px; font-weight: 500; text-align: left; }
+.nav-item { display: flex; height: 38px; align-items: center; gap: 12px; padding: 0 12px; color: var(--sidebar-text); border: 0; border-radius: 8px; background: transparent; font-size: 15px; font-weight: 500; text-align: left; }
 .nav-item:hover { color: #fff; background: var(--sidebar-hover); }
 .nav-item.is-active { color: #fff; background: var(--sidebar-active); box-shadow: inset 3px 0 0 #6d8cff; }
 .nav-item > span:first-of-type { flex: 1; }
@@ -395,3 +395,10 @@ tr.is-expanded td { background: var(--surface-hover); }
 .data-table td.cell-action:last-child, .data-table th.cell-action:last-child { position: sticky; right: 0; background: var(--surface); box-shadow: -1px 0 0 var(--border); }
 .data-table th.cell-action:last-child { background: var(--surface-2); }
 .data-table tbody tr:hover td.cell-action:last-child { background: var(--surface-hover); }
+
+/* ---------- Secret values ---------- */
+.secret-list { display: flex; flex-direction: column; gap: 10px; margin: 0; padding: 0; list-style: none; }
+.secret-list li { overflow: hidden; border: 1px solid var(--border); border-radius: 10px; }
+.secret-key { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 10px 8px 14px; background: var(--surface-2); font-weight: 600; }
+.secret-value { max-height: 240px; margin: 0; padding: 12px 14px; overflow: auto; color: var(--text); font-family: var(--font-mono); font-size: 13.5px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; }
+.secret-value.is-masked { color: var(--muted); letter-spacing: 2px; user-select: none; }

@@ -30,7 +30,7 @@ const pod = {
 }
 
 export interface FakeCall {
-  api: 'core' | 'apps' | 'object'
+  api: 'core' | 'apps' | 'batch' | 'object'
   method: string
   args: unknown[]
 }
@@ -43,7 +43,22 @@ const deployment = {
 }
 
 /** A stand-in for the Kubernetes client that returns one of everything and records every call. */
-export function fakeKube(overrides: Overrides = {}, kubeConfig = new k8s.KubeConfig(), extra: { apps?: Overrides; object?: Overrides } = {}): KubeClients & { calls: FakeCall[] } {
+const secret = { metadata: { name: 'db', namespace: 'default' }, type: 'Opaque', data: { password: Buffer.from('s3cret!').toString('base64'), 'tls.der': Buffer.from([0, 159, 146, 150]).toString('base64') } }
+
+/** objectApi.read returns these by kind; anything else is 404. */
+const objects: Record<string, unknown> = {
+  Deployment: deployment,
+  StatefulSet: { ...deployment, kind: 'StatefulSet', metadata: { name: 'db', namespace: 'default' } },
+  DaemonSet: { metadata: { name: 'agent', namespace: 'default' }, spec: { template: { spec: { containers: [{ name: 'agent', image: 'agent:1' }] } } } },
+  Pod: pod,
+  Service: { metadata: { name: 'web', namespace: 'default' }, spec: { type: 'ClusterIP', ports: [{ port: 80 }] } },
+  Secret: secret,
+  ConfigMap: { metadata: { name: 'settings', namespace: 'default' }, data: { mode: 'fast' } },
+  Job: { metadata: { name: 'once', namespace: 'default' }, spec: { template: { spec: { containers: [{ name: 'job', image: 'busybox' }] } } } },
+  CronJob: { metadata: { name: 'nightly', namespace: 'default' }, spec: { schedule: '0 1 * * *' } },
+}
+
+export function fakeKube(overrides: Overrides = {}, kubeConfig = new k8s.KubeConfig(), extra: { apps?: Overrides; batch?: Overrides; object?: Overrides } = {}): KubeClients & { calls: FakeCall[] } {
   const calls: FakeCall[] = []
   const record = (api: FakeCall['api'], methods: Record<string, (...args: unknown[]) => Promise<unknown>>) => Object.fromEntries(
     Object.entries(methods).map(([method, implementation]) => [method, async (...args: unknown[]) => {
@@ -68,6 +83,11 @@ export function fakeKube(overrides: Overrides = {}, kubeConfig = new k8s.KubeCon
     readNamespacedService: async () => ({ spec: { type: 'ClusterIP', clusterIP: '10.96.0.20', ports: [{ port: 80 }] } }),
     deleteNamespacedService: ok,
     deleteNamespace: ok,
+    readNamespacedSecret: async () => structuredClone(secret),
+    listSecretForAllNamespaces: list([secret]),
+    listNamespacedSecret: list([secret]),
+    listConfigMapForAllNamespaces: list([]),
+    listNamespacedConfigMap: list([]),
     replaceNamespacedPodEphemeralcontainers: ok,
     ...overrides,
   }
@@ -77,10 +97,30 @@ export function fakeKube(overrides: Overrides = {}, kubeConfig = new k8s.KubeCon
     readNamespacedDeployment: async () => structuredClone(deployment),
     patchNamespacedDeployment: ok,
     deleteNamespacedDeployment: ok,
+    listStatefulSetForAllNamespaces: list([]),
+    listNamespacedStatefulSet: list([]),
+    listDaemonSetForAllNamespaces: list([]),
+    listNamespacedDaemonSet: list([]),
     ...extra.apps,
   }
+  const batchApi = {
+    listJobForAllNamespaces: list([]),
+    listNamespacedJob: list([]),
+    listCronJobForAllNamespaces: list([]),
+    listNamespacedCronJob: list([]),
+    readNamespacedCronJob: async () => ({
+      metadata: { name: 'nightly', namespace: 'default', uid: 'cron-uid' },
+      spec: { schedule: '0 1 * * *', jobTemplate: { metadata: { labels: { app: 'nightly' } }, spec: { template: { spec: { restartPolicy: 'Never', containers: [{ name: 'job', image: 'busybox' }] } } } } },
+    }),
+    ...extra.batch,
+  }
   const objectApi = {
-    read: async () => { throw Object.assign(new Error('not found'), { code: 404 }) },
+    read: async (header: { kind: string }) => {
+      if (objects[header.kind]) return structuredClone(objects[header.kind])
+      throw Object.assign(new Error('not found'), { code: 404 })
+    },
+    create: async (body: unknown) => body,
+    delete: ok,
     patch: async (body: unknown) => ({ ...(body as object), metadata: { ...(body as { metadata: object }).metadata, resourceVersion: '2' } }),
     ...extra.object,
   }
@@ -88,6 +128,7 @@ export function fakeKube(overrides: Overrides = {}, kubeConfig = new k8s.KubeCon
     kubeConfig,
     coreApi: record('core', coreApi),
     appsApi: record('apps', appsApi),
+    batchApi: record('batch', batchApi),
     objectApi: record('object', objectApi),
     clusterName: 'test-cluster',
     calls,

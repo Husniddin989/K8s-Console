@@ -12,8 +12,8 @@ import type { AdminUser, Role } from '../types'
 
 const roles: Array<{ id: Role; label: string; detail: string }> = [
   { id: 'viewer', label: 'Viewer', detail: 'Reads every page and pod logs' },
-  { id: 'operator', label: 'Operator', detail: 'Viewer + restart, scale, update image, delete pods' },
-  { id: 'admin', label: 'Admin', detail: 'Operator + shell, debug, create/edit YAML, delete resources, users, audit' },
+  { id: 'operator', label: 'Operator', detail: 'Viewer + restart, scale, update image, delete pods, shell, debug, run and suspend cron jobs' },
+  { id: 'admin', label: 'Admin', detail: 'Operator + secrets, create/edit YAML, delete workloads, services, config and namespaces, users, audit' },
 ]
 
 function generatePassword(): string {

@@ -1,7 +1,7 @@
 import { useEffect, useState, type KeyboardEvent, type ReactNode } from 'react'
-import { CheckCircle2, CircleAlert, Copy, LoaderCircle, Minus, Plus } from 'lucide-react'
+import { CheckCircle2, CircleAlert, Copy, Eye, EyeOff, LoaderCircle, Minus, Plus } from 'lucide-react'
 import { templates } from '../lib/templates'
-import type { ApplyResult, DeploymentItem, PodItem } from '../types'
+import type { ApplyResult, PodItem, SecretValues, WorkloadRow } from '../types'
 import { Modal } from './Modal'
 
 function errorText(error: unknown): string {
@@ -58,11 +58,11 @@ export function ConfirmDialog({ title, message, confirmLabel, danger, typeToConf
   </Modal>
 }
 
-export function ScaleDialog({ deployment, onSubmit, onClose }: { deployment: DeploymentItem; onSubmit: (replicas: number) => Promise<void>; onClose: () => void }) {
+export function ScaleDialog({ workload: deployment, kindLabel, onSubmit, onClose }: { workload: WorkloadRow; kindLabel: string; onSubmit: (replicas: number) => Promise<void>; onClose: () => void }) {
   const { busy, error, run } = useSubmit(onClose)
   const [replicas, setReplicas] = useState(deployment.desired)
   const valid = Number.isInteger(replicas) && replicas >= 0 && replicas <= 1000
-  return <Modal title="Scale deployment" subtitle={deployment.namespace + ' / ' + deployment.name} onClose={onClose} size="small" footer={<>
+  return <Modal title={'Scale ' + kindLabel} subtitle={deployment.namespace + ' / ' + deployment.name} onClose={onClose} size="small" footer={<>
     <button className="button" onClick={onClose}>Cancel</button>
     <button className="button button-primary" disabled={busy || !valid || replicas === deployment.desired} onClick={() => void run(() => onSubmit(replicas))}><Spinner busy={busy}>Scale to {valid ? replicas : '…'}</Spinner></button>
   </>}>
@@ -72,12 +72,12 @@ export function ScaleDialog({ deployment, onSubmit, onClose }: { deployment: Dep
       <input type="number" min={0} max={1000} value={Number.isNaN(replicas) ? '' : replicas} onChange={(event) => setReplicas(event.target.valueAsNumber)} aria-label="Replicas" data-autofocus />
       <button className="button" onClick={() => setReplicas((current) => Math.min(1000, (Number.isNaN(current) ? 0 : current) + 1))} aria-label="One more replica"><Plus size={16} /></button>
     </div>
-    {replicas === 0 && <p className="form-hint text-warning">Scaling to 0 stops every pod of this deployment.</p>}
+    {replicas === 0 && <p className="form-hint text-warning">Scaling to 0 stops every pod of this {kindLabel}.</p>}
     <DialogError error={error} />
   </Modal>
 }
 
-export function ImageDialog({ deployment, onSubmit, onClose }: { deployment: DeploymentItem; onSubmit: (container: string, image: string) => Promise<void>; onClose: () => void }) {
+export function ImageDialog({ workload: deployment, kindLabel, onSubmit, onClose }: { workload: WorkloadRow; kindLabel: string; onSubmit: (container: string, image: string) => Promise<void>; onClose: () => void }) {
   const { busy, error, run } = useSubmit(onClose)
   const [container, setContainer] = useState(deployment.containers[0] || '')
   const currentImage = deployment.images[deployment.containers.indexOf(container)] || ''
@@ -90,7 +90,7 @@ export function ImageDialog({ deployment, onSubmit, onClose }: { deployment: Dep
     {deployment.containers.length > 1 && <label className="form-field"><span>Container</span><select value={container} onChange={(event) => { setContainer(event.target.value); setImage(deployment.images[deployment.containers.indexOf(event.target.value)] || '') }}>{deployment.containers.map((name) => <option key={name}>{name}</option>)}</select></label>}
     <label className="form-field"><span>Current image</span><input value={currentImage} readOnly className="mono" /></label>
     <label className="form-field"><span>New image</span><input value={image} onChange={(event) => setImage(event.target.value)} className="mono" spellCheck={false} placeholder="registry/name:tag" data-autofocus /></label>
-    <p className="form-hint">The deployment rolls out new pods with this image, like kubectl set image.</p>
+    <p className="form-hint">The {kindLabel} rolls out new pods with this image, like kubectl set image.</p>
     <DialogError error={error} />
   </Modal>
 }
@@ -192,6 +192,55 @@ export function YamlDialog({ title, subtitle, load, initialTemplate, namespace, 
       <span className="mono">{item.kind.toLowerCase()}/{item.name}</span>{item.namespace && <span className="text-muted">in {item.namespace}</span>}
       <strong>{result.dryRun && item.operation !== 'failed' ? 'valid (' + item.operation + ')' : item.operation}</strong>
       {item.error && <span className="apply-error">{item.error}</span>}
+    </li>)}</ul>}
+  </Modal>
+}
+
+export function SecretDialog({ title, load, onEdit, onClose }: { title: string; load: () => Promise<SecretValues>; onEdit?: () => void; onClose: () => void }) {
+  const [secret, setSecret] = useState<SecretValues | null>(null)
+  const [error, setError] = useState('')
+  const [shown, setShown] = useState<Set<string>>(new Set())
+  const [copied, setCopied] = useState('')
+
+  useEffect(() => {
+    let cancelled = false
+    load().then((values) => { if (!cancelled) setSecret(values) }).catch((loadError: unknown) => { if (!cancelled) setError(errorText(loadError)) })
+    return () => { cancelled = true }
+  }, [load])
+
+  const toggle = (key: string) => setShown((current) => {
+    const next = new Set(current)
+    if (next.has(key)) next.delete(key)
+    else next.add(key)
+    return next
+  })
+  const copy = async (key: string, value: string) => {
+    try {
+      await navigator.clipboard.writeText(value)
+      setCopied(key)
+      window.setTimeout(() => setCopied(''), 1500)
+    } catch {
+      setError('Copying is blocked by the browser')
+    }
+  }
+  const allShown = secret ? secret.entries.every((entry) => shown.has(entry.key)) : false
+
+  return <Modal title={title} subtitle={secret ? secret.namespace + ' / ' + secret.name + ' · ' + secret.type : undefined} onClose={onClose} size="medium" footer={<>
+    {secret && secret.entries.length > 0 && <button className="button" onClick={() => setShown(allShown ? new Set() : new Set(secret.entries.map((entry) => entry.key)))}>{allShown ? <EyeOff size={15} /> : <Eye size={15} />}{allShown ? 'Hide all' : 'Show all'}</button>}
+    <span className="toolbar-spacer" />
+    {onEdit && <button className="button" onClick={onEdit}>Edit YAML</button>}
+    <button className="button button-primary" onClick={onClose}>Done</button>
+  </>}>
+    <p className="form-hint">Opening this window was written to the audit log. Values stay hidden until you show them.</p>
+    <DialogError error={error} />
+    {!secret && !error && <div className="loading-block"><LoaderCircle size={18} className="spin" /> Loading secret</div>}
+    {secret && !secret.entries.length && <p className="dialog-text">This secret has no keys.</p>}
+    {secret && <ul className="secret-list">{secret.entries.map((entry) => <li key={entry.key}>
+      <div className="secret-key"><span className="mono">{entry.key}</span>{entry.binary && <span className="chip">binary · base64</span>}<span className="toolbar-spacer" />
+        <button className="button button-small" onClick={() => toggle(entry.key)} aria-label={(shown.has(entry.key) ? 'Hide ' : 'Show ') + entry.key}>{shown.has(entry.key) ? <EyeOff size={15} /> : <Eye size={15} />}{shown.has(entry.key) ? 'Hide' : 'Show'}</button>
+        <button className="button button-small" onClick={() => void copy(entry.key, entry.value)} aria-label={'Copy ' + entry.key}><Copy size={15} />{copied === entry.key ? 'Copied' : 'Copy'}</button>
+      </div>
+      <pre className={'secret-value' + (shown.has(entry.key) ? '' : ' is-masked')}>{shown.has(entry.key) ? entry.value || '(empty)' : '•'.repeat(Math.min(Math.max(entry.value.length, 8), 32))}</pre>
     </li>)}</ul>}
   </Modal>
 }

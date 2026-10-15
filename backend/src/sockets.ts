@@ -37,8 +37,8 @@ export function attachWebSockets(server: Server, options: SocketOptions): WebSoc
   const sockets = new WebSocketServer({ noServer: true, maxPayload: 64 * 1024 })
   const routes: Record<string, SocketRoute> = {
     '/ws/logs': { role: 'viewer', writes: false, handle: (webSocket, request) => streamPodLogs(webSocket, request, kube.kubeConfig) },
-    '/ws/exec': { role: 'admin', writes: true, handle: (webSocket, request, user) => openTerminal('exec', webSocket, request, { kube, store, user }) },
-    '/ws/attach': { role: 'admin', writes: true, handle: (webSocket, request, user) => openTerminal('attach', webSocket, request, { kube, store, user }) },
+    '/ws/exec': { role: 'operator', writes: true, handle: (webSocket, request, user) => openTerminal('exec', webSocket, request, { kube, store, user }) },
+    '/ws/attach': { role: 'operator', writes: true, handle: (webSocket, request, user) => openTerminal('attach', webSocket, request, { kube, store, user }) },
   }
 
   server.on('upgrade', (request, socket, head) => {

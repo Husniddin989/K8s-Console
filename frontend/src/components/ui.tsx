@@ -1,5 +1,6 @@
 import { useMemo, useState, type ReactNode } from 'react'
-import { ArrowDown, ArrowUp, ArrowUpDown, Inbox, LoaderCircle, RefreshCw, ServerCrash } from 'lucide-react'
+import { ArrowDown, ArrowUp, ArrowUpDown, Inbox, LoaderCircle, Plus, RefreshCw, ServerCrash } from 'lucide-react'
+import { useConsoleActions } from '../lib/actionsContext'
 import { statusTone } from '../lib/format'
 import { sortRows, type SortDirection, type SortValue } from '../lib/sort'
 
@@ -75,4 +76,11 @@ export function PageHeader({ title, description, count, children }: { title: str
     <div><h1>{title}{count !== undefined && <span className="page-count">{count}</span>}</h1><p>{description}</p></div>
     {children && <div className="page-header-actions">{children}</div>}
   </div>
+}
+
+/** "Create …" opens the YAML editor with a template; admins only. */
+export function CreateButton({ template, label }: { template: string; label: string }) {
+  const actions = useConsoleActions()
+  if (!actions.can('apply')) return null
+  return <button className="button button-primary" onClick={() => actions.create(template)}><Plus size={16} />{label}</button>
 }

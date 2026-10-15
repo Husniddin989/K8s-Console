@@ -2,10 +2,16 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import {
   AlertCircle,
   Boxes,
+  CalendarClock,
   Container,
+  Database,
   FileClock,
+  FileSliders,
   LayoutDashboard,
+  Layers,
   ListChecks,
+  ListTodo,
+  LockKeyhole,
   LogOut,
   Menu,
   Moon,
@@ -22,7 +28,7 @@ import {
 import { api, AuthRequiredError } from './api'
 import { ActionsProvider } from './components/ActionsProvider'
 import { EmptyState, ErrorState, LoadingBlock } from './components/ui'
-import { deploymentMatches, eventMatches, filterItems, nodeMatches, podMatches, serviceMatches } from './lib/filters'
+import { anyFieldMatches, deploymentMatches, eventMatches, filterItems, nodeMatches, podMatches, serviceMatches } from './lib/filters'
 import { humanDuration } from './lib/kubectl'
 import { can } from './lib/permissions'
 import { formatRoute, parseRoute } from './lib/route'
@@ -30,9 +36,11 @@ import { applyTheme, initialTheme, type Theme } from './lib/theme'
 import { Logs } from './pages/Logs'
 import { Overview } from './pages/Overview'
 import { AuditPage } from './pages/Audit'
+import { ConfigMapsPage, SecretsPage } from './pages/config'
 import { DeploymentsPage, EventsPage, NamespacesPage, NodesPage, PodsPage, ServicesPage } from './pages/resources'
+import { CronJobsPage, DaemonSetsPage, JobsPage, StatefulSetsPage } from './pages/workloads'
 import { UsersPage } from './pages/Users'
-import type { AuthSession, ClusterSummary, DeploymentItem, EventItem, NamespaceItem, NodeItem, PageId, PodItem, Role, ServiceItem } from './types'
+import type { AuthSession, ClusterSummary, DeploymentItem, EventItem, ExtraLists, NamespaceItem, NodeItem, PageId, PodItem, Role, ServiceItem } from './types'
 
 type DataState = 'loading' | 'ready' | 'error'
 
@@ -43,10 +51,15 @@ interface ClusterData {
   services: ServiceItem[]
   nodes: NodeItem[]
   events: EventItem[]
+  /** The list for the current extra page (stateful sets, jobs, secrets, …), loaded only while it is open. */
+  extra: { kind: ExtraKind; rows: ExtraLists[ExtraKind] } | null
   loadedAt: number
 }
 
-type NavGroup = 'Cluster' | 'Workloads' | 'Observe' | 'Admin'
+type ExtraKind = keyof ExtraLists
+const extraKinds: ExtraKind[] = ['statefulsets', 'daemonsets', 'jobs', 'cronjobs', 'configmaps', 'secrets']
+
+type NavGroup = 'Cluster' | 'Workloads' | 'Network & config' | 'Observe' | 'Admin'
 
 const navigation: Array<{ id: PageId; label: string; icon: typeof LayoutDashboard; group: NavGroup }> = [
   { id: 'overview', label: 'Overview', icon: LayoutDashboard, group: 'Cluster' },
@@ -54,13 +67,19 @@ const navigation: Array<{ id: PageId; label: string; icon: typeof LayoutDashboar
   { id: 'nodes', label: 'Nodes', icon: Server, group: 'Cluster' },
   { id: 'pods', label: 'Pods', icon: Container, group: 'Workloads' },
   { id: 'deployments', label: 'Deployments', icon: Boxes, group: 'Workloads' },
-  { id: 'services', label: 'Services', icon: Waypoints, group: 'Workloads' },
+  { id: 'statefulsets', label: 'StatefulSets', icon: Database, group: 'Workloads' },
+  { id: 'daemonsets', label: 'DaemonSets', icon: Layers, group: 'Workloads' },
+  { id: 'jobs', label: 'Jobs', icon: ListTodo, group: 'Workloads' },
+  { id: 'cronjobs', label: 'CronJobs', icon: CalendarClock, group: 'Workloads' },
+  { id: 'services', label: 'Services', icon: Waypoints, group: 'Network & config' },
+  { id: 'configmaps', label: 'ConfigMaps', icon: FileSliders, group: 'Network & config' },
+  { id: 'secrets', label: 'Secrets', icon: LockKeyhole, group: 'Network & config' },
   { id: 'events', label: 'Events', icon: FileClock, group: 'Observe' },
   { id: 'logs', label: 'Pod logs', icon: TerminalSquare, group: 'Observe' },
   { id: 'users', label: 'Users', icon: Users, group: 'Admin' },
   { id: 'audit', label: 'Audit log', icon: ListChecks, group: 'Admin' },
 ]
-const adminPages: PageId[] = ['users', 'audit']
+const adminPages: PageId[] = ['users', 'audit', 'secrets']
 
 const roleLabels: Record<Role, string> = { viewer: 'Viewer', operator: 'Operator', admin: 'Admin' }
 
@@ -118,13 +137,16 @@ export function Console({ session, onSignOut, onSessionExpired }: { session: Aut
     return () => window.removeEventListener('hashchange', followHash)
   }, [])
 
+  const canSeeSecrets = can(session, 'viewSecrets')
+  const extraKind = extraKinds.includes(page as ExtraKind) && (page !== 'secrets' || canSeeSecrets) ? page as ExtraKind : null
+
   const refresh = useCallback(async (quiet = false) => {
     requestControllerRef.current?.abort()
     const controller = new AbortController()
     requestControllerRef.current = controller
     if (!quiet) setRefreshing(true)
     try {
-      const [namespaceData, summary, pods, deployments, services, nodes, events] = await Promise.all([
+      const [namespaceData, summary, pods, deployments, services, nodes, events, extraRows] = await Promise.all([
         api.namespaces(controller.signal),
         api.summary(namespace, controller.signal),
         api.pods(namespace, controller.signal),
@@ -132,6 +154,7 @@ export function Console({ session, onSignOut, onSessionExpired }: { session: Aut
         api.services(namespace, controller.signal),
         api.nodes(controller.signal),
         api.events(namespace, controller.signal),
+        extraKind ? api.list(extraKind, namespace, controller.signal) : Promise.resolve(null),
       ])
       if (controller.signal.aborted) return
       setNamespaces(namespaceData)
@@ -140,7 +163,7 @@ export function Console({ session, onSignOut, onSessionExpired }: { session: Aut
         setNamespace('all')
         return
       }
-      setData({ namespace, summary, pods, deployments, services, nodes, events, loadedAt: Date.now() })
+      setData({ namespace, summary, pods, deployments, services, nodes, events, extra: extraKind && extraRows ? { kind: extraKind, rows: extraRows } : null, loadedAt: Date.now() })
       setNow(Date.now())
       setState('ready')
       setError('')
@@ -158,7 +181,7 @@ export function Console({ session, onSignOut, onSessionExpired }: { session: Aut
         setRefreshing(false)
       }
     }
-  }, [namespace, onSessionExpired])
+  }, [namespace, extraKind, onSessionExpired])
 
   useEffect(() => {
     const initialLoad = window.setTimeout(() => { void refresh() }, 0)
@@ -177,12 +200,14 @@ export function Console({ session, onSignOut, onSessionExpired }: { session: Aut
     services: filterItems(current.services, search, serviceMatches),
     nodes: filterItems(current.nodes, search, nodeMatches),
     events: filterItems(current.events, search, eventMatches),
-  }, [current, search])
+    extra: current.extra && current.extra.kind === extraKind ? filterItems(current.extra.rows as object[], search, anyFieldMatches) : null,
+  }, [current, search, extraKind])
   // `now` re-renders relative ages between refreshes.
   const updatedAgo = current ? humanDuration(Math.max(0, now - current.loadedAt)) : ''
 
   const isAdmin = can(session, 'manageUsers')
-  const groups: NavGroup[] = isAdmin ? ['Cluster', 'Workloads', 'Observe', 'Admin'] : ['Cluster', 'Workloads', 'Observe']
+  const groups: NavGroup[] = isAdmin ? ['Cluster', 'Workloads', 'Network & config', 'Observe', 'Admin'] : ['Cluster', 'Workloads', 'Network & config', 'Observe']
+  const visibleNavigation = navigation.filter((item) => item.id !== 'secrets' || canSeeSecrets)
   const counts: Partial<Record<PageId, number>> = current ? {
     namespaces: namespaces.length,
     pods: current.pods.length,
@@ -204,6 +229,9 @@ export function Console({ session, onSignOut, onSessionExpired }: { session: Aut
     goTo('pods')
   }
   const adminOnly = adminPages.includes(page) && !isAdmin
+  const extraTotal = current?.extra && current.extra.kind === extraKind ? current.extra.rows.length : 0
+  // The rows match extraKind (checked when filtering), so each page can take them as its own type.
+  const extraRows = (filtered?.extra ?? []) as never
 
   return <ActionsProvider session={session} namespace={namespace} onChanged={refreshQuietly} onSessionExpired={onSessionExpired}><div className="shell">
     {sidebarOpen && <button className="backdrop" onClick={() => setSidebarOpen(false)} aria-label="Close navigation" />}
@@ -213,7 +241,7 @@ export function Console({ session, onSignOut, onSessionExpired }: { session: Aut
       <nav className="nav" aria-label="Main navigation">
         {groups.map((group) => <div className="nav-group" key={group}>
           <span className="nav-group-label">{group}</span>
-          {navigation.filter((item) => item.group === group).map((item) => {
+          {visibleNavigation.filter((item) => item.group === group).map((item) => {
             const Icon = item.icon
             const count = item.id === 'events' ? warningCount : counts[item.id]
             return <button className={'nav-item' + (page === item.id ? ' is-active' : '')} key={item.id} onClick={() => goTo(item.id)} aria-current={page === item.id ? 'page' : undefined}>
@@ -252,6 +280,13 @@ export function Console({ session, onSignOut, onSessionExpired }: { session: Aut
           {page === 'services' && <ServicesPage rows={filtered.services} total={current.services.length} showNamespace={showNamespace} />}
           {page === 'nodes' && <NodesPage rows={filtered.nodes} total={current.nodes.length} />}
           {page === 'events' && <EventsPage rows={filtered.events} total={current.events.length} showNamespace={showNamespace} />}
+          {extraKind && !filtered.extra && <LoadingBlock />}
+          {extraKind === 'statefulsets' && filtered.extra && <StatefulSetsPage rows={extraRows} total={extraTotal} showNamespace={showNamespace} />}
+          {extraKind === 'daemonsets' && filtered.extra && <DaemonSetsPage rows={extraRows} total={extraTotal} showNamespace={showNamespace} />}
+          {extraKind === 'jobs' && filtered.extra && <JobsPage rows={extraRows} total={extraTotal} showNamespace={showNamespace} />}
+          {extraKind === 'cronjobs' && filtered.extra && <CronJobsPage rows={extraRows} total={extraTotal} showNamespace={showNamespace} />}
+          {extraKind === 'configmaps' && filtered.extra && <ConfigMapsPage rows={extraRows} total={extraTotal} showNamespace={showNamespace} />}
+          {extraKind === 'secrets' && filtered.extra && <SecretsPage rows={extraRows} total={extraTotal} showNamespace={showNamespace} />}
           {page === 'logs' && <Logs key={selectedPod} pods={current.pods} initialPod={selectedPod} onSessionExpired={onSessionExpired} />}
         </>}
       </main>

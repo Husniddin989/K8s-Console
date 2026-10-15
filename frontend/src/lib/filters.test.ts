@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { EventItem, NodeItem, PodItem, ServiceItem } from '../types'
-import { eventMatches, filterItems, nodeMatches, podMatches, serviceMatches } from './filters'
+import { anyFieldMatches, eventMatches, filterItems, nodeMatches, podMatches, serviceMatches } from './filters'
 
 const pod = (name: string, namespace = 'default', status = 'Running'): PodItem => ({ name, namespace, phase: 'Running', status, node: 'kind-control-plane', restarts: 0, lastRestartAt: null, ready: 1, containers: 1, containerNames: ['app'], images: ['nginx:1.27'], createdAt: null, ip: '10.244.0.5', labels: {} })
 
@@ -34,5 +34,16 @@ describe('filterItems', () => {
     const event: EventItem = { name: 'e', namespace: 'default', type: 'Warning', reason: 'BackOff', message: 'Back-off restarting', object: 'pod/web-1', count: 1, time: null }
     expect(eventMatches(event, 'warning')).toBe(true)
     expect(eventMatches(event, 'oomkilled')).toBe(false)
+  })
+})
+
+describe('anyFieldMatches', () => {
+  it('searches strings and string lists on any row', () => {
+    const cronJob = { name: 'nightly', namespace: 'ops', schedule: '0 1 * * *', images: ['busybox:1.36'], suspend: false, active: 0 }
+    expect(anyFieldMatches(cronJob, 'busybox')).toBe(true)
+    expect(anyFieldMatches(cronJob, '0 1 *')).toBe(true)
+    expect(anyFieldMatches(cronJob, 'ops')).toBe(true)
+    expect(anyFieldMatches(cronJob, 'false')).toBe(false)
+    expect(anyFieldMatches(cronJob, '')).toBe(true)
   })
 })

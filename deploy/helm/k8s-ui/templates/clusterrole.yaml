@@ -6,11 +6,20 @@ metadata:
     {{- include "k8s-ui.labels" . | nindent 4 }}
 rules:
   - apiGroups: [""]
-    resources: ["namespaces", "nodes", "pods", "events", "services"]
+    resources: ["namespaces", "nodes", "pods", "events", "services", "configmaps"]
     verbs: ["get", "list", "watch"]
   - apiGroups: [""]
     resources: ["pods/log"]
     verbs: ["get"]
   - apiGroups: ["apps"]
-    resources: ["deployments"]
+    resources: ["deployments", "statefulsets", "daemonsets", "replicasets"]
     verbs: ["get", "list", "watch"]
+  - apiGroups: ["batch"]
+    resources: ["jobs", "cronjobs"]
+    verbs: ["get", "list", "watch"]
+  {{- if .Values.rbac.secrets }}
+  # Only console admins can see the Secrets page and reveal values; every reveal is audited.
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "list", "watch"]
+  {{- end }}

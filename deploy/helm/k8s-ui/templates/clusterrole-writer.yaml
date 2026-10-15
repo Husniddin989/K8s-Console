@@ -15,7 +15,7 @@ rules:
   - apiGroups: [""]
     resources: ["pods", "services", "configmaps", "namespaces", "persistentvolumeclaims", "serviceaccounts"]
     verbs: ["get", "list", "create", "update", "patch", "delete"]
-  # Shell (exec) and debug (ephemeral containers + attach), admin only in the console
+  # Shell (exec) and debug (ephemeral containers + attach), operator and admin in the console
   - apiGroups: [""]
     resources: ["pods/exec", "pods/attach"]
     verbs: ["get", "create"]
@@ -28,6 +28,11 @@ rules:
   - apiGroups: ["networking.k8s.io"]
     resources: ["ingresses", "networkpolicies"]
     verbs: ["get", "list", "create", "update", "patch", "delete"]
+  {{- if .Values.rbac.secrets }}
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "list", "create", "update", "patch", "delete"]
+  {{- end }}
   {{- with .Values.rbac.extraWriteRules }}
   {{- toYaml . | nindent 2 }}
   {{- end }}

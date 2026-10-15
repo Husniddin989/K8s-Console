@@ -1,4 +1,4 @@
-import type { AdminUser, ApplyResult, AuditEntry, AuthSession, ClusterSummary, DeploymentItem, EventItem, NamespaceItem, NodeItem, PodItem, Role, ServiceItem, YamlKind } from './types'
+import type { AdminUser, ApplyResult, AuditEntry, AuthSession, ClusterSummary, DeploymentItem, EventItem, ExtraLists, NamespaceItem, NodeItem, PodItem, ResourceKind, Role, SecretValues, ServiceItem } from './types'
 
 export class ApiError extends Error {
   readonly status: number
@@ -77,15 +77,17 @@ export const api = {
   nodes: (signal?: AbortSignal) => getJson<NodeItem[]>('/api/nodes', signal),
   events: (namespace: string, signal?: AbortSignal) => getJson<EventItem[]>('/api/events' + query(namespace), signal),
 
-  yaml: (kind: YamlKind, namespace: string, name: string) => request<string>('/api/yaml/' + kind + '/' + segment(namespace || '_') + '/' + segment(name), { headers: { Accept: 'application/yaml' } }, 'text'),
+  list: <K extends keyof ExtraLists>(kind: K, namespace: string, signal?: AbortSignal) => getJson<ExtraLists[K]>('/api/' + kind + query(namespace), signal),
+
+  yaml: (kind: ResourceKind, namespace: string, name: string) => request<string>('/api/yaml/' + kind + '/' + segment(namespace || '_') + '/' + segment(name), { headers: { Accept: 'application/yaml' } }, 'text'),
   apply: (yaml: string, dryRun: boolean) => send<ApplyResult>('POST', '/api/apply', { yaml, dryRun }),
-  restartDeployment: (namespace: string, name: string) => send<void>('POST', '/api/deployments/' + segment(namespace) + '/' + segment(name) + '/restart'),
-  scaleDeployment: (namespace: string, name: string, replicas: number) => send<void>('POST', '/api/deployments/' + segment(namespace) + '/' + segment(name) + '/scale', { replicas }),
-  setImage: (namespace: string, name: string, container: string, image: string) => send<void>('POST', '/api/deployments/' + segment(namespace) + '/' + segment(name) + '/image', { container, image }),
-  deletePod: (namespace: string, name: string) => send<void>('DELETE', '/api/pods/' + segment(namespace) + '/' + segment(name)),
-  deleteDeployment: (namespace: string, name: string) => send<void>('DELETE', '/api/deployments/' + segment(namespace) + '/' + segment(name)),
-  deleteService: (namespace: string, name: string) => send<void>('DELETE', '/api/services/' + segment(namespace) + '/' + segment(name)),
-  deleteNamespace: (name: string) => send<void>('DELETE', '/api/namespaces/' + segment(name)),
+  restart: (kind: ResourceKind, namespace: string, name: string) => send<void>('POST', '/api/' + kind + '/' + segment(namespace) + '/' + segment(name) + '/restart'),
+  scale: (kind: ResourceKind, namespace: string, name: string, replicas: number) => send<void>('POST', '/api/' + kind + '/' + segment(namespace) + '/' + segment(name) + '/scale', { replicas }),
+  setImage: (kind: ResourceKind, namespace: string, name: string, container: string, image: string) => send<void>('POST', '/api/' + kind + '/' + segment(namespace) + '/' + segment(name) + '/image', { container, image }),
+  remove: (kind: ResourceKind, namespace: string, name: string) => send<void>('DELETE', kind === 'namespaces' ? '/api/namespaces/' + segment(name) : '/api/' + kind + '/' + segment(namespace) + '/' + segment(name)),
+  triggerCronJob: (namespace: string, name: string) => send<{ job: string }>('POST', '/api/cronjobs/' + segment(namespace) + '/' + segment(name) + '/trigger'),
+  suspendCronJob: (namespace: string, name: string, suspend: boolean) => send<void>('POST', '/api/cronjobs/' + segment(namespace) + '/' + segment(name) + '/suspend', { suspend }),
+  secretValues: (namespace: string, name: string) => request<SecretValues>('/api/secrets/' + segment(namespace) + '/' + segment(name) + '/data'),
   debugPod: (namespace: string, name: string, target: string, image: string) => send<{ container: string }>('POST', '/api/pods/' + segment(namespace) + '/' + segment(name) + '/debug', { target, image }),
 
   users: () => request<AdminUser[]>('/api/admin/users'),

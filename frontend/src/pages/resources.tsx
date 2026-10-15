@@ -1,65 +1,10 @@
-import { Bug, FileCode2, ImageUp, Plus, RotateCcw, Scaling, SquareTerminal, TerminalSquare, Trash2 } from 'lucide-react'
-import { RowMenu, type MenuItem } from '../components/RowMenu'
-import { DataTable, EmptyState, PageHeader, StatusBadge, type Column } from '../components/ui'
-import { useConsoleActions, type ConsoleActions } from '../lib/actionsContext'
+import { Bug, FileCode2, SquareTerminal, TerminalSquare } from 'lucide-react'
+import { CreateButton, DataTable, EmptyState, PageHeader, StatusBadge, type Column } from '../components/ui'
+import { useConsoleActions } from '../lib/actionsContext'
+import { ageColumn, containersColumn, countLabel, deleteItem, emptyFor, imagesColumn, key, labelsColumn, menuColumn, nameColumn, namespaceColumn, rolloutItems, yamlItem, type ListProps } from '../lib/columns'
 import { age, ageMs, restartsText } from '../lib/kubectl'
+import { formatTime } from '../lib/format'
 import type { DeploymentItem, EventItem, NamespaceItem, NodeItem, PodItem, ServiceItem } from '../types'
-import { countLabel, formatTime } from '../lib/format'
-
-const key = (row: { namespace: string; name: string }) => row.namespace + '/' + row.name
-
-function namespaceColumn<T extends { namespace: string }>(): Column<T> {
-  return { key: 'namespace', header: 'Namespace', value: (row) => row.namespace, render: (row) => <span className="chip">{row.namespace}</span> }
-}
-
-function nameColumn<T extends { name: string }>(): Column<T> {
-  return { key: 'name', header: 'Name', value: (row) => row.name, render: (row) => <span className="resource-name">{row.name}</span> }
-}
-
-function ageColumn<T extends { createdAt: string | null }>(): Column<T> {
-  return { key: 'age', header: 'Age', kind: 'mono', value: (row) => ageMs(row.createdAt), render: (row) => <span title={row.createdAt ? formatTime(row.createdAt) : undefined}>{age(row.createdAt)}</span> }
-}
-
-/** Renders `a=b,c=d` selectors as wrapping chips so long label sets stay readable. */
-function labelsColumn<T>(header: string, value: (row: T) => string): Column<T> {
-  return {
-    key: header.toLowerCase(),
-    header,
-    kind: 'labels',
-    value,
-    render: (row) => value(row) === '<none>' ? <span className="text-muted">&lt;none&gt;</span> : <span className="label-list">{value(row).split(',').map((label) => <span className="label-chip" key={label}>{label}</span>)}</span>,
-  }
-}
-
-function menuColumn<T extends { name: string }>(label: string, items: (row: T) => MenuItem[]): Column<T> {
-  return { key: 'menu', header: 'Actions', kind: 'action', value: () => '', render: (row) => <RowMenu label={label + ' ' + row.name} items={items(row)} /> }
-}
-
-function yamlItem(actions: ConsoleActions, open: () => void): MenuItem {
-  return { label: actions.can('apply') ? 'View / edit YAML' : 'View YAML', icon: <FileCode2 size={16} />, onSelect: open }
-}
-
-function deleteItem(actions: ConsoleActions, capability: 'deletePod' | 'deleteResource', label: string, run: () => void): MenuItem {
-  return { label, icon: <Trash2 size={16} />, onSelect: run, danger: true, blocked: actions.blocked(capability) || undefined, separatorBefore: true }
-}
-
-function CreateButton({ template, label }: { template: string; label: string }) {
-  const actions = useConsoleActions()
-  if (!actions.can('apply')) return null
-  return <button className="button button-primary" onClick={() => actions.create(template)}><Plus size={16} />{label}</button>
-}
-
-function emptyFor(kind: string, total: number) {
-  return total
-    ? <EmptyState title={'No matching ' + kind} detail="Clear or change the search to see more." />
-    : <EmptyState title={'No ' + kind + ' in this scope'} detail="Choose another namespace from the selector at the top." />
-}
-
-interface ListProps<T> {
-  rows: T[]
-  total: number
-  showNamespace: boolean
-}
 
 export function PodsPage({ rows, total, showNamespace, onOpenLogs }: ListProps<PodItem> & { onOpenLogs: (pod: PodItem) => void }) {
   const actions = useConsoleActions()
@@ -77,8 +22,8 @@ export function PodsPage({ rows, total, showNamespace, onOpenLogs }: ListProps<P
       { label: 'Logs', icon: <TerminalSquare size={16} />, onSelect: () => onOpenLogs(pod) },
       { label: 'Shell', icon: <SquareTerminal size={16} />, onSelect: () => actions.shell(pod), blocked: actions.blocked('shell') || (pod.status !== 'Running' ? 'Pod is not running' : undefined) },
       { label: 'Debug', icon: <Bug size={16} />, onSelect: () => actions.debug(pod), blocked: actions.blocked('debug') || (pod.status !== 'Running' ? 'Pod is not running' : undefined) },
-      yamlItem(actions, () => actions.yaml('pod', pod.namespace, pod.name)),
-      deleteItem(actions, 'deletePod', 'Delete pod', () => actions.remove('pod', pod.namespace, pod.name)),
+      yamlItem(actions, () => actions.yaml('pods', pod.namespace, pod.name)),
+      deleteItem(actions, 'deletePod', 'Delete pod', () => actions.remove('pods', pod.namespace, pod.name)),
     ]),
   ]
   return <>
@@ -96,15 +41,13 @@ export function DeploymentsPage({ rows, total, showNamespace }: ListProps<Deploy
     { key: 'upToDate', header: 'Up-to-date', kind: 'num', value: (row) => row.upToDate },
     { key: 'available', header: 'Available', kind: 'num', value: (row) => row.available },
     ageColumn<DeploymentItem>(),
-    { key: 'containers', header: 'Containers', value: (row) => row.containers.join(','), render: (row) => row.containers.join(', ') },
-    { key: 'images', header: 'Images', kind: 'mono', value: (row) => row.images.join(','), render: (row) => <span className="stack">{row.images.map((image) => <span key={image}>{image}</span>)}</span> },
+    containersColumn<DeploymentItem>(),
+    imagesColumn<DeploymentItem>(),
     labelsColumn<DeploymentItem>('Selector', (row) => row.selector),
     menuColumn<DeploymentItem>('Actions for deployment', (row) => [
-      { label: 'Restart', icon: <RotateCcw size={16} />, onSelect: () => actions.restart(row), blocked: actions.blocked('restart') || undefined },
-      { label: 'Scale', icon: <Scaling size={16} />, onSelect: () => actions.scale(row), blocked: actions.blocked('scale') || undefined },
-      { label: 'Update image', icon: <ImageUp size={16} />, onSelect: () => actions.setImage(row), blocked: actions.blocked('setImage') || undefined },
-      yamlItem(actions, () => actions.yaml('deployment', row.namespace, row.name)),
-      deleteItem(actions, 'deleteResource', 'Delete deployment', () => actions.remove('deployment', row.namespace, row.name)),
+      ...rolloutItems(actions, 'deployments', row, true),
+      yamlItem(actions, () => actions.yaml('deployments', row.namespace, row.name)),
+      deleteItem(actions, 'deleteResource', 'Delete deployment', () => actions.remove('deployments', row.namespace, row.name)),
     ]),
   ]
   return <>
@@ -125,8 +68,8 @@ export function ServicesPage({ rows, total, showNamespace }: ListProps<ServiceIt
     ageColumn<ServiceItem>(),
     labelsColumn<ServiceItem>('Selector', (row) => row.selector),
     menuColumn<ServiceItem>('Actions for service', (row) => [
-      yamlItem(actions, () => actions.yaml('service', row.namespace, row.name)),
-      deleteItem(actions, 'deleteResource', 'Delete service', () => actions.remove('service', row.namespace, row.name)),
+      yamlItem(actions, () => actions.yaml('services', row.namespace, row.name)),
+      deleteItem(actions, 'deleteResource', 'Delete service', () => actions.remove('services', row.namespace, row.name)),
     ]),
   ]
   return <>
@@ -149,7 +92,7 @@ export function NodesPage({ rows, total }: Omit<ListProps<NodeItem>, 'showNamesp
     { key: 'kernel', header: 'Kernel', kind: 'mono', value: (row) => row.kernelVersion },
     { key: 'runtime', header: 'Container runtime', kind: 'mono', value: (row) => row.containerRuntime },
     { key: 'capacity', header: 'CPU / Memory / Pods', kind: 'mono', sortable: false, value: (row) => row.cpu, render: (row) => row.cpu + ' / ' + row.memory + ' / ' + row.pods },
-    menuColumn<NodeItem>('Actions for node', (row) => [{ label: 'View YAML', icon: <FileCode2 size={16} />, onSelect: () => actions.yaml('node', '', row.name) }]),
+    menuColumn<NodeItem>('Actions for node', (row) => [{ label: 'View YAML', icon: <FileCode2 size={16} />, onSelect: () => actions.yaml('nodes', '', row.name) }]),
   ]
   return <>
     <PageHeader title="Nodes" count={countLabel(rows.length, total)} description="Readiness, versions and capacity, as in kubectl get nodes -o wide." />
@@ -184,8 +127,8 @@ export function NamespacesPage({ rows, total, pods, onOpen }: { rows: NamespaceI
     labelsColumn<NamespaceItem>('Labels', (row) => Object.entries(row.labels).map(([key, value]) => key + '=' + value).join(',') || '<none>'),
     menuColumn<NamespaceItem>('Actions for namespace', (row) => [
       { label: 'Show pods', icon: <TerminalSquare size={16} />, onSelect: () => onOpen(row.name) },
-      yamlItem(actions, () => actions.yaml('namespace', '', row.name)),
-      deleteItem(actions, 'deleteResource', 'Delete namespace', () => actions.remove('namespace', '', row.name)),
+      yamlItem(actions, () => actions.yaml('namespaces', '', row.name)),
+      deleteItem(actions, 'deleteResource', 'Delete namespace', () => actions.remove('namespaces', '', row.name)),
     ]),
   ]
   return <>

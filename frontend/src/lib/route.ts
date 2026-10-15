@@ -1,6 +1,6 @@
 import type { PageId } from '../types'
 
-const pages: PageId[] = ['overview', 'namespaces', 'pods', 'deployments', 'services', 'nodes', 'events', 'logs', 'users', 'audit']
+const pages: PageId[] = ['overview', 'namespaces', 'nodes', 'pods', 'deployments', 'statefulsets', 'daemonsets', 'jobs', 'cronjobs', 'services', 'configmaps', 'secrets', 'events', 'logs', 'users', 'audit']
 const aliases: Record<string, PageId> = { workloads: 'pods' }
 const namespacePattern = /^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$/
 

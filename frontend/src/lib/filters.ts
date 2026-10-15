@@ -18,3 +18,11 @@ export function filterItems<T>(items: T[], search: string, matcher: (item: T, te
   const term = searchTerm(search)
   return term ? items.filter((item) => matcher(item, term)) : items
 }
+
+/** Matches any string (or list of strings) on the row; used for the simpler list pages. */
+export function anyFieldMatches(row: object, term: string): boolean {
+  if (!term) return true
+  return Object.values(row).some((value) => typeof value === 'string'
+    ? value.toLowerCase().includes(term)
+    : Array.isArray(value) && value.some((item) => typeof item === 'string' && item.toLowerCase().includes(term)))
+}

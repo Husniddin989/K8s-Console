@@ -26,6 +26,7 @@ describe('route', () => {
   it('keeps old links working and falls back safely', () => {
     expect(parseRoute('#/workloads?namespace=default')).toEqual({ page: 'pods', namespace: 'default' })
     expect(parseRoute('')).toEqual({ page: 'overview', namespace: 'all' })
-    expect(parseRoute('#/secrets?namespace=Bad_Name')).toEqual({ page: 'overview', namespace: 'all' })
+    expect(parseRoute('#/widgets?namespace=Bad_Name')).toEqual({ page: 'overview', namespace: 'all' })
+    expect(parseRoute('#/secrets?namespace=default')).toEqual({ page: 'secrets', namespace: 'default' })
   })
 })

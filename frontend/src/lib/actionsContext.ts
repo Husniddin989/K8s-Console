@@ -1,18 +1,19 @@
 import { createContext, useContext } from 'react'
 import type { Capability } from './permissions'
-import type { DeploymentItem, PodItem, YamlKind } from '../types'
-
-export type DeletableKind = 'pod' | 'deployment' | 'service' | 'namespace'
+import type { CronJobItem, PodItem, ResourceKind, SecretItem, WorkloadRow } from '../types'
 
 export interface ConsoleActions {
   can: (capability: Capability) => boolean
   /** Empty when allowed, otherwise why not (shown on disabled menu items). */
   blocked: (capability: Capability) => string
-  restart: (deployment: DeploymentItem) => void
-  scale: (deployment: DeploymentItem) => void
-  setImage: (deployment: DeploymentItem) => void
-  remove: (kind: DeletableKind, namespace: string, name: string) => void
-  yaml: (kind: YamlKind, namespace: string, name: string) => void
+  restart: (kind: ResourceKind, row: { namespace: string; name: string }) => void
+  scale: (kind: ResourceKind, row: WorkloadRow) => void
+  setImage: (kind: ResourceKind, row: WorkloadRow) => void
+  remove: (kind: ResourceKind, namespace: string, name: string) => void
+  yaml: (kind: ResourceKind, namespace: string, name: string) => void
+  triggerCronJob: (row: CronJobItem) => void
+  suspendCronJob: (row: CronJobItem) => void
+  revealSecret: (row: SecretItem) => void
   create: (templateId: string) => void
   shell: (pod: PodItem) => void
   debug: (pod: PodItem) => void

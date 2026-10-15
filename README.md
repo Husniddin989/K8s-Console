@@ -1,14 +1,16 @@
 # K8s UI
 
-A purpose-built Kubernetes cluster console. It shows cluster health and lists pods, deployments, services, nodes, and events with the same columns as `kubectl get … -o wide` (READY, STATUS, RESTARTS with the last restart time, AGE, IPs, ports), plus a live pod log stream. Tables sort by any column, a single search box filters every page, and the UI has light and dark themes. Frontend and API ship together in one Docker image.
+A purpose-built Kubernetes cluster console. It shows cluster health and lists namespaces, nodes, pods, deployments, stateful sets, daemon sets, jobs, cron jobs, services, config maps, secrets (admins only) and events with the same columns as `kubectl get … -o wide` (READY, STATUS, RESTARTS with the last restart time, AGE, IPs, ports), plus a live pod log stream. Tables sort by any column, a single search box filters every page, and the UI has light and dark themes. Frontend and API ship together in one Docker image.
 
 Every API route and WebSocket require a signed-in user. Users have one of three roles, checked by the backend on every request:
 
 | Role | Can do |
 | --- | --- |
-| `viewer` | Read every page, pod logs, and resource YAML |
-| `operator` | Viewer + restart, scale and update the image of deployments, delete pods |
-| `admin` | Operator + shell into pods, debug pods (ephemeral containers), create/edit any resource from YAML (server-side apply), delete deployments, services and namespaces, manage users, read the audit log |
+| `viewer` | Read every page except Secrets, pod logs, and resource YAML |
+| `operator` | Viewer + restart, scale and update the image of deployments, stateful sets and daemon sets, delete pods, shell into pods, debug pods (ephemeral containers), run a cron job now, suspend/resume cron jobs |
+| `admin` | Operator + Secrets (list, reveal values, create, edit, delete), create/edit any resource from YAML (server-side apply), delete workloads, jobs, services, config maps and namespaces, manage users, read the audit log |
+
+Secret lists carry key names only. Revealing values (or opening a secret's YAML) writes a `secret.reveal` audit record, and secret values never enter the audit log — applying or deleting a secret records its key names.
 
 Every change, sign-in and user change is written to the **audit log** (who, when, which resource, before/after values, result, client IP). Admins search and filter it on the *Audit log* page. Shell sessions record who opened them and for which container; the commands typed inside are not recorded.
 
@@ -94,7 +96,7 @@ The chart:
 - stores the user list and a generated session secret in the `k8s-ui-auth` Secret (the session secret is kept across upgrades), or uses `auth.existingSecret` with keys `users.json` and `session-secret`;
 - restarts the pod when `auth.users` changes, so added, removed, or re-roled users apply at once — sessions of removed users stop working;
 - refuses to render when no users are configured;
-- creates a dedicated ServiceAccount with read access to namespaces, nodes, pods, pod logs, events, services, and deployments, and — with `rbac.clusterWrites: true` (the default) — write access for the console's actions: deployments (incl. scale), pods, `pods/exec`, `pods/attach`, `pods/ephemeralcontainers`, services, configmaps, namespaces, PVCs, service accounts, statefulsets, daemonsets, jobs, cronjobs, ingresses and network policies. Add more kinds for YAML apply with `rbac.extraWriteRules`. Set `rbac.clusterWrites: false` for a read-only console;
+- creates a dedicated ServiceAccount with read access to namespaces, nodes, pods, pod logs, events, services, config maps, deployments, stateful sets, daemon sets, replica sets, jobs and cron jobs — plus secrets when `rbac.secrets: true` (the default) — and — with `rbac.clusterWrites: true` (the default) — write access for the console's actions: deployments (incl. scale), pods, `pods/exec`, `pods/attach`, `pods/ephemeralcontainers`, services, configmaps, namespaces, PVCs, service accounts, statefulsets, daemonsets, jobs, cronjobs, ingresses and network policies. Add more kinds for YAML apply with `rbac.extraWriteRules`. Set `rbac.clusterWrites: false` for a read-only console;
 - creates a 1 Gi PersistentVolumeClaim for users and the audit log (`persistence.*`; kept on uninstall) and replaces the pod with `maxSurge: 0` so two pods never share the volume;
 - uses `debugImage` (default `busybox:1.36`) for debug containers. It does not create an Ingress.
 

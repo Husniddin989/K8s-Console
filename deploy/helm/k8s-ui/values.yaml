@@ -39,6 +39,9 @@ rbac:
   #    resources: ["horizontalpodautoscalers"]
   #    verbs: ["get", "list", "create", "update", "patch", "delete"]
   extraWriteRules: []
+  # Let the console read (and, with clusterWrites, change) Secrets. Only console admins see
+  # them, and every reveal of values is written to the audit log. false hides the Secrets page.
+  secrets: true
 
 # Image used for ephemeral debug containers ("Debug" on a pod).
 debugImage: busybox:1.36

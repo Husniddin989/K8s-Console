@@ -182,3 +182,118 @@ export function mapEvent(event: k8s.CoreV1Event) {
 export function byNamespaceAndName(a: { namespace: string; name: string }, b: { namespace: string; name: string }): number {
   return a.namespace.localeCompare(b.namespace) || a.name.localeCompare(b.name)
 }
+
+function containersOf(template: k8s.V1PodTemplateSpec | undefined) {
+  const containers = template?.spec?.containers || []
+  return { containers: containers.map((container) => container.name), images: containers.map((container) => container.image || '') }
+}
+
+function selectorText(labels: Record<string, string> | undefined): string {
+  return Object.entries(labels || {}).map(([key, value]) => key + '=' + value).join(',') || '<none>'
+}
+
+/** kubectl get statefulsets: READY is ready/desired. */
+export function mapStatefulSet(statefulSet: k8s.V1StatefulSet) {
+  return {
+    name: statefulSet.metadata?.name || 'unknown',
+    namespace: statefulSet.metadata?.namespace || 'default',
+    desired: statefulSet.spec?.replicas ?? 1,
+    ready: statefulSet.status?.readyReplicas ?? 0,
+    upToDate: statefulSet.status?.updatedReplicas ?? 0,
+    serviceName: statefulSet.spec?.serviceName || '<none>',
+    ...containersOf(statefulSet.spec?.template),
+    createdAt: timestamp(statefulSet.metadata?.creationTimestamp),
+  }
+}
+
+/** kubectl get daemonsets: DESIRED CURRENT READY UP-TO-DATE AVAILABLE NODE SELECTOR. */
+export function mapDaemonSet(daemonSet: k8s.V1DaemonSet) {
+  return {
+    name: daemonSet.metadata?.name || 'unknown',
+    namespace: daemonSet.metadata?.namespace || 'default',
+    desired: daemonSet.status?.desiredNumberScheduled ?? 0,
+    current: daemonSet.status?.currentNumberScheduled ?? 0,
+    ready: daemonSet.status?.numberReady ?? 0,
+    upToDate: daemonSet.status?.updatedNumberScheduled ?? 0,
+    available: daemonSet.status?.numberAvailable ?? 0,
+    nodeSelector: selectorText(daemonSet.spec?.template.spec?.nodeSelector),
+    ...containersOf(daemonSet.spec?.template),
+    createdAt: timestamp(daemonSet.metadata?.creationTimestamp),
+  }
+}
+
+/** kubectl's job STATUS column. */
+export function jobStatus(job: k8s.V1Job): string {
+  const condition = (type: string) => job.status?.conditions?.some((item) => item.type === type && item.status === 'True')
+  if (condition('Complete')) return 'Complete'
+  if (condition('Failed')) return 'Failed'
+  if (condition('FailureTarget')) return 'FailureTarget'
+  if (condition('SuccessCriteriaMet')) return 'SuccessCriteriaMet'
+  if (job.spec?.suspend) return 'Suspended'
+  return 'Running'
+}
+
+export function mapJob(job: k8s.V1Job) {
+  return {
+    name: job.metadata?.name || 'unknown',
+    namespace: job.metadata?.namespace || 'default',
+    status: jobStatus(job),
+    succeeded: job.status?.succeeded ?? 0,
+    completions: job.spec?.completions ?? 1,
+    active: job.status?.active ?? 0,
+    failed: job.status?.failed ?? 0,
+    startTime: timestamp(job.status?.startTime),
+    completionTime: timestamp(job.status?.completionTime),
+    owner: job.metadata?.ownerReferences?.[0] ? job.metadata.ownerReferences[0].kind.toLowerCase() + '/' + job.metadata.ownerReferences[0].name : null,
+    ...containersOf(job.spec?.template),
+    createdAt: timestamp(job.metadata?.creationTimestamp),
+  }
+}
+
+export function mapCronJob(cronJob: k8s.V1CronJob) {
+  return {
+    name: cronJob.metadata?.name || 'unknown',
+    namespace: cronJob.metadata?.namespace || 'default',
+    schedule: cronJob.spec?.schedule || '',
+    timeZone: cronJob.spec?.timeZone || '<none>',
+    suspend: Boolean(cronJob.spec?.suspend),
+    active: cronJob.status?.active?.length ?? 0,
+    lastScheduleTime: timestamp(cronJob.status?.lastScheduleTime),
+    lastSuccessfulTime: timestamp(cronJob.status?.lastSuccessfulTime),
+    ...containersOf(cronJob.spec?.jobTemplate.spec?.template),
+    createdAt: timestamp(cronJob.metadata?.creationTimestamp),
+  }
+}
+
+export function mapConfigMap(configMap: k8s.V1ConfigMap) {
+  const keys = [...Object.keys(configMap.data || {}), ...Object.keys(configMap.binaryData || {})].sort()
+  return {
+    name: configMap.metadata?.name || 'unknown',
+    namespace: configMap.metadata?.namespace || 'default',
+    keys,
+    immutable: Boolean(configMap.immutable),
+    createdAt: timestamp(configMap.metadata?.creationTimestamp),
+  }
+}
+
+/** Secret rows carry key names only; values are never part of a list response. */
+export function mapSecret(secret: k8s.V1Secret) {
+  return {
+    name: secret.metadata?.name || 'unknown',
+    namespace: secret.metadata?.namespace || 'default',
+    type: secret.type || 'Opaque',
+    keys: Object.keys(secret.data || {}).sort(),
+    immutable: Boolean(secret.immutable),
+    createdAt: timestamp(secret.metadata?.creationTimestamp),
+  }
+}
+
+/** Decodes secret values for display; non-UTF-8 values stay base64 and are flagged. */
+export function decodeSecretData(data: Record<string, string> | undefined): Array<{ key: string; value: string; binary: boolean }> {
+  return Object.entries(data || {}).sort(([a], [b]) => a.localeCompare(b)).map(([key, encoded]) => {
+    const bytes = Buffer.from(encoded, 'base64')
+    const text = bytes.toString('utf8')
+    const binary = !Buffer.from(text, 'utf8').equals(bytes) || /[\u0000-\u0008\u000e-\u001f]/.test(text)
+    return { key, value: binary ? encoded : text, binary }
+  })
+}

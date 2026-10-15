@@ -8,8 +8,10 @@ export const capabilities = {
   deletePod: { role: 'operator', clusterWrite: true },
   deleteResource: { role: 'admin', clusterWrite: true },
   apply: { role: 'admin', clusterWrite: true },
-  shell: { role: 'admin', clusterWrite: true },
-  debug: { role: 'admin', clusterWrite: true },
+  shell: { role: 'operator', clusterWrite: true },
+  debug: { role: 'operator', clusterWrite: true },
+  cronJobs: { role: 'operator', clusterWrite: true },
+  viewSecrets: { role: 'admin', clusterWrite: false },
   manageUsers: { role: 'admin', clusterWrite: false },
   viewAudit: { role: 'admin', clusterWrite: false },
 } as const satisfies Record<string, { role: Role; clusterWrite: boolean }>

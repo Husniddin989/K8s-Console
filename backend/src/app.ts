@@ -6,7 +6,7 @@ import type { KubeClients } from './kube.js'
 import { createActionsRouter } from './actions.js'
 import { createAdminRouter } from './admin.js'
 import type { ConsoleStore } from './store.js'
-import { byNamespaceAndName, mapDeployment, mapEvent, mapNode, mapPod, mapService, nodeIsReady } from './resources.js'
+import { byNamespaceAndName, mapConfigMap, mapCronJob, mapDaemonSet, mapDeployment, mapEvent, mapJob, mapNode, mapPod, mapSecret, mapService, mapStatefulSet, nodeIsReady } from './resources.js'
 
 export const sessionCookieName = 'k8s_ui_session'
 export const namespacePattern = /^[a-z0-9](?:[-a-z0-9]*[a-z0-9])?$/
@@ -64,7 +64,7 @@ function kubernetesStatus(error: unknown): number | undefined {
 export function createApp(options: AppOptions) {
   const { kube, auth, store } = options
   const clusterWrites = options.clusterWrites ?? true
-  const { coreApi, appsApi } = kube
+  const { coreApi, appsApi, batchApi } = kube
   const throttle = options.loginThrottle || new LoginThrottle()
   const app = express()
 
@@ -279,6 +279,28 @@ export function createApp(options: AppOptions) {
     }
   })
 
+  /** Registers GET /<path>?namespace=… for a list-all / list-in-namespace pair of API calls. */
+  function listRoute<T>(path: string, all: () => Promise<{ items: T[] }>, inNamespace: (namespace: string) => Promise<{ items: T[] }>, map: (item: T) => { namespace: string; name: string }, ...guards: RequestHandler[]) {
+    reader.get(path, ...guards, async (request, response, next) => {
+      try {
+        const namespace = namespaceFrom(request, response)
+        if (!namespace) return
+        const list = namespace === 'all' ? await all() : await inNamespace(namespace)
+        response.json(list.items.map(map).sort(byNamespaceAndName))
+      } catch (error) {
+        next(error)
+      }
+    })
+  }
+
+  listRoute('/statefulsets', () => appsApi.listStatefulSetForAllNamespaces({ limit: 500 }), (namespace) => appsApi.listNamespacedStatefulSet({ namespace, limit: 500 }), mapStatefulSet)
+  listRoute('/daemonsets', () => appsApi.listDaemonSetForAllNamespaces({ limit: 500 }), (namespace) => appsApi.listNamespacedDaemonSet({ namespace, limit: 500 }), mapDaemonSet)
+  listRoute('/jobs', () => batchApi.listJobForAllNamespaces({ limit: 500 }), (namespace) => batchApi.listNamespacedJob({ namespace, limit: 500 }), mapJob)
+  listRoute('/cronjobs', () => batchApi.listCronJobForAllNamespaces({ limit: 500 }), (namespace) => batchApi.listNamespacedCronJob({ namespace, limit: 500 }), mapCronJob)
+  listRoute('/configmaps', () => coreApi.listConfigMapForAllNamespaces({ limit: 500 }), (namespace) => coreApi.listNamespacedConfigMap({ namespace, limit: 500 }), mapConfigMap)
+  // Secrets are admin-only; the list carries key names, never values.
+  listRoute('/secrets', () => coreApi.listSecretForAllNamespaces({ limit: 500 }), (namespace) => coreApi.listNamespacedSecret({ namespace, limit: 500 }), mapSecret, requireRole('admin'))
+
   reader.get('/nodes', async (_request, response, next) => {
     try {
       const nodes = await coreApi.listNode({ limit: 500 })
@@ -318,6 +340,8 @@ export function createApp(options: AppOptions) {
   })
 
   app.use('/api', reader)
+  // Admin routes first: the generic /:resource/:namespace/:name action routes would otherwise match /admin/users/<name>.
+  app.use('/api/admin', createAdminRouter({ auth, store }))
   app.use('/api', createActionsRouter({
     kube,
     store,
@@ -325,7 +349,6 @@ export function createApp(options: AppOptions) {
     debugImage: options.debugImage || 'busybox:1.36',
     protectedNamespaces: options.protectedNamespaces ?? ['default', 'kube-system', 'kube-public', 'kube-node-lease'],
   }))
-  app.use('/api/admin', createAdminRouter({ auth, store }))
   app.use('/api', (_request, response) => {
     response.status(404).json({ error: 'API route not found' })
   })
