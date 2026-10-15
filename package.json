@@ -1,0 +1,20 @@
+{
+  "name": "k8s-ui",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "frontend",
+    "backend"
+  ],
+  "scripts": {
+    "dev": "concurrently -k -n API,WEB -c cyan,magenta \"npm run dev --workspace @k8s-ui/api\" \"npm run dev --workspace @k8s-ui/web\"",
+    "build": "npm run build --workspace @k8s-ui/api && npm run build --workspace @k8s-ui/web",
+    "start": "npm run start --workspace @k8s-ui/api",
+    "typecheck": "npm run typecheck --workspace @k8s-ui/api && npm run typecheck --workspace @k8s-ui/web",
+    "lint": "npm run lint --workspace @k8s-ui/web",
+    "test": "npm run test --workspace @k8s-ui/api && npm run test --workspace @k8s-ui/web"
+  },
+  "devDependencies": {
+    "concurrently": "^10.0.6"
+  }
+}

@@ -1,0 +1,148 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "k8s-ui.fullname" . }}
+  labels:
+    {{- include "k8s-ui.labels" . | nindent 4 }}
+spec:
+  replicas: {{ .Values.replicaCount }}
+  {{- if .Values.persistence.enabled }}
+  # The SQLite volume is ReadWriteOnce; stop the old pod before starting the new one.
+  # (Same effect as Recreate, but upgrades cleanly from the default RollingUpdate.)
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+  {{- end }}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: {{ include "k8s-ui.name" . }}
+      app.kubernetes.io/instance: {{ .Release.Name }}
+  template:
+    metadata:
+      annotations:
+        # Restart pods when the user list changes so new accounts and roles apply.
+        checksum/auth-users: {{ .Values.auth.users | toJson | sha256sum }}
+        {{- with .Values.podAnnotations }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      labels:
+        app.kubernetes.io/name: {{ include "k8s-ui.name" . }}
+        app.kubernetes.io/instance: {{ .Release.Name }}
+    spec:
+      serviceAccountName: {{ include "k8s-ui.fullname" . }}
+      automountServiceAccountToken: true
+      terminationGracePeriodSeconds: 15
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: console
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.targetPort }}
+              protocol: TCP
+          env:
+            - name: HOST
+              value: "0.0.0.0"
+            - name: PORT
+              value: {{ .Values.service.targetPort | quote }}
+            {{- if .Values.clusterName }}
+            - name: CLUSTER_NAME
+              value: {{ .Values.clusterName | quote }}
+            {{- end }}
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: CLUSTER_WRITES
+              value: {{ .Values.rbac.clusterWrites | quote }}
+            - name: DEBUG_IMAGE
+              value: {{ .Values.debugImage | quote }}
+            {{- if .Values.persistence.enabled }}
+            - name: DATA_DIR
+              value: /data
+            {{- end }}
+            - name: AUTH_USERS_FILE
+              value: /etc/k8s-ui/auth/users.json
+            - name: SESSION_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "k8s-ui.authSecretName" . }}
+                  key: session-secret
+            - name: SESSION_TTL_HOURS
+              value: {{ .Values.auth.sessionTtlHours | quote }}
+            - name: COOKIE_SECURE
+              value: {{ .Values.auth.cookieSecure | quote }}
+            {{- with .Values.auth.trustProxy }}
+            - name: TRUST_PROXY
+              value: {{ . | quote }}
+            {{- end }}
+            {{- with .Values.auth.trustedOrigins }}
+            - name: TRUSTED_ORIGINS
+              value: {{ join "," . | quote }}
+            {{- end }}
+          volumeMounts:
+            - name: auth
+              mountPath: /etc/k8s-ui/auth
+              readOnly: true
+            {{- if .Values.persistence.enabled }}
+            - name: data
+              mountPath: /data
+            {{- end }}
+          readinessProbe:
+            exec:
+              command:
+                - node
+                - -e
+                - >-
+                  fetch('http://127.0.0.1:3001/api/health')
+                  .then((response) => process.exit(response.ok ? 0 : 1))
+                  .catch(() => process.exit(1))
+            initialDelaySeconds: 4
+            timeoutSeconds: 5
+            periodSeconds: 10
+          livenessProbe:
+            exec:
+              command:
+                - node
+                - -e
+                - >-
+                  fetch('http://127.0.0.1:3001/api/live')
+                  .then((response) => process.exit(response.ok ? 0 : 1))
+                  .catch(() => process.exit(1))
+            initialDelaySeconds: 10
+            timeoutSeconds: 5
+            periodSeconds: 20
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+      volumes:
+        - name: auth
+          secret:
+            secretName: {{ include "k8s-ui.authSecretName" . }}
+            items:
+              - key: users.json
+                path: users.json
+        {{- if .Values.persistence.enabled }}
+        - name: data
+          persistentVolumeClaim:
+            claimName: {{ .Values.persistence.existingClaim | default (printf "%s-data" (include "k8s-ui.fullname" .)) }}
+        {{- end }}
+      nodeSelector:
+        {{- toYaml .Values.nodeSelector | nindent 8 }}
+      tolerations:
+        {{- toYaml .Values.tolerations | nindent 8 }}
+      affinity:
+        {{- toYaml .Values.affinity | nindent 8 }}

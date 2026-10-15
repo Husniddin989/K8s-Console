@@ -1,0 +1,49 @@
+{{- if .Values.rbac.clusterWrites }}
+# Write access for console actions. The console still checks each user's role
+# (operator / admin) before it uses these permissions.
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: {{ include "k8s-ui.fullname" . }}-writer
+  labels:
+    {{- include "k8s-ui.labels" . | nindent 4 }}
+rules:
+  # Restart, scale, update image, delete, apply (operator/admin)
+  - apiGroups: ["apps"]
+    resources: ["deployments", "deployments/scale", "statefulsets", "daemonsets", "replicasets"]
+    verbs: ["get", "list", "create", "update", "patch", "delete"]
+  - apiGroups: [""]
+    resources: ["pods", "services", "configmaps", "namespaces", "persistentvolumeclaims", "serviceaccounts"]
+    verbs: ["get", "list", "create", "update", "patch", "delete"]
+  # Shell (exec) and debug (ephemeral containers + attach), admin only in the console
+  - apiGroups: [""]
+    resources: ["pods/exec", "pods/attach"]
+    verbs: ["get", "create"]
+  - apiGroups: [""]
+    resources: ["pods/ephemeralcontainers"]
+    verbs: ["get", "update", "patch"]
+  - apiGroups: ["batch"]
+    resources: ["jobs", "cronjobs"]
+    verbs: ["get", "list", "create", "update", "patch", "delete"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["ingresses", "networkpolicies"]
+    verbs: ["get", "list", "create", "update", "patch", "delete"]
+  {{- with .Values.rbac.extraWriteRules }}
+  {{- toYaml . | nindent 2 }}
+  {{- end }}
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: {{ include "k8s-ui.fullname" . }}-writer
+  labels:
+    {{- include "k8s-ui.labels" . | nindent 4 }}
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: {{ include "k8s-ui.fullname" . }}-writer
+subjects:
+  - kind: ServiceAccount
+    name: {{ include "k8s-ui.fullname" . }}
+    namespace: {{ .Release.Namespace }}
+{{- end }}

@@ -1,0 +1,9 @@
+The console is internal to the cluster. Forward it to localhost:
+
+  kubectl -n {{ .Release.Namespace }} port-forward svc/{{ include "k8s-ui.fullname" . }} 8080:{{ .Values.service.port }}
+
+Then open http://127.0.0.1:8080
+
+Sign in with one of the {{ len .Values.auth.users }} users configured in auth.users
+{{- if .Values.auth.existingSecret }} (or the users in Secret {{ .Values.auth.existingSecret }}){{ end }}.
+To add or change users, update auth.users and run helm upgrade; the pod restarts with the new list.

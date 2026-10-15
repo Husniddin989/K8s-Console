@@ -1,0 +1,70 @@
+replicaCount: 1
+clusterName: ""
+
+image:
+  repository: k8s-ui
+  tag: dev
+  pullPolicy: IfNotPresent
+
+nameOverride: ""
+fullnameOverride: ""
+
+auth:
+  # Console users. Generate each passwordHash with:
+  #   npm run users --workspace @k8s-ui/api -- hash
+  # Roles: viewer (read only), operator (future restart/scale), admin (everything).
+  users: []
+  #  - username: admin
+  #    role: admin
+  #    passwordHash: "scrypt$16384$8$1$..."
+  # Use an existing Secret instead of `users`. It must contain the key `users.json`
+  # (the same JSON list as above) and `session-secret` (a random string of 32+ characters).
+  existingSecret: ""
+  # Session cookie lifetime in hours.
+  sessionTtlHours: 8
+  # auto: Secure cookie when the request arrives over HTTPS (needs trustProxy behind an Ingress).
+  # always / never: force it on or off.
+  cookieSecure: auto
+  # Express "trust proxy" value, e.g. "1" behind one Ingress hop. Empty = do not trust X-Forwarded-*.
+  trustProxy: ""
+  # Extra origins allowed to send sign-in requests and open log streams, e.g. https://console.example.com
+  trustedOrigins: []
+
+rbac:
+  # Grant the console's ServiceAccount write access so operators/admins can restart, scale,
+  # update images, delete, apply YAML, open a shell and debug. false = read-only console.
+  clusterWrites: true
+  # Extra ClusterRole rules for kinds you want to apply from the console, e.g.
+  #  - apiGroups: ["autoscaling"]
+  #    resources: ["horizontalpodautoscalers"]
+  #    verbs: ["get", "list", "create", "update", "patch", "delete"]
+  extraWriteRules: []
+
+# Image used for ephemeral debug containers ("Debug" on a pod).
+debugImage: busybox:1.36
+
+persistence:
+  # Stores users created in the admin UI and the audit log (SQLite). Without it they are
+  # lost whenever the pod restarts.
+  enabled: true
+  size: 1Gi
+  storageClass: ""
+  existingClaim: ""
+
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 3001
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+podAnnotations: {}
+nodeSelector: {}
+tolerations: []
+affinity: {}
